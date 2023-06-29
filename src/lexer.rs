@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Tokens<'a>{
     Create,
     List,
@@ -6,20 +7,27 @@ pub enum Tokens<'a>{
     Arg(&'a str)
 }
 
-pub struct Lexer<'a>{
-    command: &'a str,
+#[derive(Clone)]
+pub struct Parsed;
+#[derive(Clone)]
+pub struct Unparsed;
+
+#[derive(Clone)]
+pub struct Lexer<'a, State = Unparsed>{
+    // command: &'a str,
+    state: std::marker::PhantomData<State>,
     command_atoms: Vec<&'a str>,
     pub tokens: Vec<Tokens<'a>>
 }
 
-impl<'a> Lexer<'a>{
+impl<'a> Lexer<'a, Unparsed>{
     pub fn new(command: &'a str) -> Self{
         let command = command.get(1..command.len() - 1).unwrap();
-        let mut commands: Vec<&'a str> = command.split_ascii_whitespace().collect();
-        Lexer{ command: command, command_atoms: commands, tokens: Vec::new() }
+        let commands: Vec<&'a str> = command.split_ascii_whitespace().collect();
+        Lexer{ command_atoms: commands, tokens: Vec::new(), state: std::marker::PhantomData::<Unparsed> }
     }
 
-    pub fn scan(&mut self){
+    pub fn scan(&mut self) -> Lexer<Parsed>{
         // All command are simple, they have the form COMMAND ARG1 ARG2 ARG3 ...
         // each command has predefined number of arguments.
         let command = *self.command_atoms.get(0).unwrap();
@@ -33,19 +41,24 @@ impl<'a> Lexer<'a>{
                 if self.command_atoms.len() == 2{
                     let room_name = *self.command_atoms.get(1).unwrap();
                     self.tokens.push(Tokens::Create);
-                    self.tokens.push(Tokens::Arg(room_name))
+                    self.tokens.push(Tokens::Arg(room_name));
                 }
             }
             // list all (non-private) rooms, takes no arguments
             // :list
             "list" => {
-
+                self.tokens.push(Tokens::List)
             }
 
             // The next two feel a bit awkward as they're supposed to be "local" commands
             // Change nick, takes three arguments old name and new name and password in that order. 
-            // :nick old_name new_name
+            // :nick new_name
             "nick" => {
+                if self.command_atoms.len() == 2{
+                    let new_nick = *self.command_atoms.get(1).unwrap();
+                    self.tokens.push(Tokens::Nick);
+                    self.tokens.push(Tokens::Arg(new_nick))
+                }
 
             }
 
@@ -63,5 +76,19 @@ impl<'a> Lexer<'a>{
 
             }
         }
+        // Can I remove this clone?
+        return Lexer::new_parsed(command, self.tokens.clone())
+    }
+}
+
+impl<'a> Lexer<'a, Parsed>{
+    fn new_parsed(command: &'a str, tokens: Vec<Tokens<'a>>) -> Self{
+        let command = command.get(1..command.len() - 1).unwrap();
+        let commands: Vec<&'a str> = command.split_ascii_whitespace().collect();
+        Lexer{ command_atoms: commands, tokens: tokens, state: std::marker::PhantomData::<Parsed> }
+    }
+
+    pub fn is_local_command(&self) -> bool{
+        return self.tokens.get(0).unwrap() == &Tokens::Join || self.tokens.get(0).unwrap() == &Tokens::Nick
     }
 }
